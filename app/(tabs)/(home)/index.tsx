@@ -1,7 +1,7 @@
 
 import React from "react";
 import { Stack } from "expo-router";
-import { ScrollView, StyleSheet, View, Text, Platform, Pressable, Image } from "react-native";
+import { ScrollView, StyleSheet, View, Text, Platform, Pressable } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -51,15 +51,6 @@ export default function HomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo and Header */}
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('@/assets/images/dae78010-3a6a-4e3a-9e43-9351133e928c.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.greeting}>Bonjour 👋</Text>
@@ -186,15 +177,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 100,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  logo: {
-    width: 60,
-    height: 60,
   },
   header: {
     marginBottom: 24,

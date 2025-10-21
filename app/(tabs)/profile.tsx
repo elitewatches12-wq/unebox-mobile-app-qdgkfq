@@ -1,6 +1,6 @@
 
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
@@ -41,11 +41,7 @@ export default function ProfileScreen() {
           <View style={[commonStyles.card, styles.profileHeader]}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                <Image 
-                  source={require('@/assets/images/dae78010-3a6a-4e3a-9e43-9351133e928c.png')}
-                  style={styles.avatarLogo}
-                  resizeMode="contain"
-                />
+                <Text style={styles.avatarText}>JD</Text>
               </View>
               <Pressable style={styles.editAvatarButton}>
                 <IconSymbol name="camera.fill" size={16} color="#FFFFFF" />
@@ -184,15 +180,16 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: colors.primary,
   },
-  avatarLogo: {
-    width: 60,
-    height: 60,
+  avatarText: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   editAvatarButton: {
     position: 'absolute',
