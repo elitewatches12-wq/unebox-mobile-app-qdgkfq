@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Natively logo">
+  <!-- Background: transparent -->
+  <!-- Inverted equilateral triangle with internal Y-shaped strokes -->
+  <polygon points="256,200 768,200 512,880" fill="#2196F3" stroke="#0b0b0b" stroke-width="48" stroke-linejoin="miter" />
+  <!-- Central point where internal strokes meet -->
+  <line x1="256" y1="200" x2="512" y2="426" stroke="#0b0b0b" stroke-width="32" stroke-linecap="square" />
+  <line x1="768" y1="200" x2="512" y2="426" stroke="#0b0b0b" stroke-width="32" stroke-linecap="square" />
+  <line x1="512" y1="426" x2="512" y2="880" stroke="#0b0b0b" stroke-width="32" stroke-linecap="square" />
+</svg>
