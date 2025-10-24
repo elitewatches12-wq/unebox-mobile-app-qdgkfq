@@ -5,11 +5,11 @@
     "slug": "Natively",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/4d3de452-cf93-4bd4-a7f2-9db8a94ef8b9.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/images/4d3de452-cf93-4bd4-a7f2-9db8a94ef8b9.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -22,14 +22,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/images/4d3de452-cf93-4bd4-a7f2-9db8a94ef8b9.png",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.Natively"
     },
     "web": {
-      "favicon": "./assets/icon.png",
+      "favicon": "./assets/images/4d3de452-cf93-4bd4-a7f2-9db8a94ef8b9.png",
       "bundler": "metro"
     },
     "plugins": [
