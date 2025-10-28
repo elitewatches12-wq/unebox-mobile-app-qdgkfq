@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "UneBox",
@@ -14,8 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unebox.app",
-      "buildNumber": "3",
+      "bundleIdentifier": "com.charlesbaptista.uneboxappleappdev",
+      "buildNumber": "5",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "UneBox a besoin d'accéder à votre appareil photo pour scanner vos documents.",
@@ -30,7 +31,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.unebox.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -59,7 +60,10 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "ctymgbwdvasdghxxhhvo"
+      }
     }
   }
 }
