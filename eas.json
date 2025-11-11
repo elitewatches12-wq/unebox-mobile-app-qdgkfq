@@ -1,7 +1,6 @@
 {
   "cli": {
-    "version": ">= 5.9.0",
-    "appVersionSource": "remote"
+    "version": ">= 5.9.0"
   },
   "build": {
     "development": {
@@ -10,9 +9,6 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_ENV": "development"
-      },
-      "ios": {
-        "simulator": true
       }
     },
     "preview": {
@@ -43,27 +39,9 @@
         "buildType": "app-bundle",
         "resourceClass": "medium"
       }
-    },
-    "production-dev": {
-      "extends": "production",
-      "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_ENV": "production"
-      },
-      "ios": {
-        "simulator": false,
-        "buildConfiguration": "Release",
-        "resourceClass": "m-medium"
-      }
     }
   },
   "submit": {
-    "production": {
-      "ios": {
-        "appleId": "baptistaoyoko90@icloud.com",
-        "ascAppId": "placeholder",
-        "appleTeamId": "placeholder"
-      }
-    }
+    "production": {}
   }
 }

@@ -1,45 +1,350 @@
 
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform, TextInput, KeyboardAvoidingView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, TextInput, KeyboardAvoidingView, ActivityIndicator, Keyboard } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { colors, commonStyles } from "@/styles/commonStyles";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { supabase } from "@/app/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Tables } from "@/app/integrations/supabase/types";
 
 type Message = {
   id: string;
   text: string;
   sender: 'user' | 'ai';
   timestamp: Date;
+  documents?: Tables<'documents'>[];
+  entities?: SearchEntity[];
+};
+
+type SearchEntity = {
+  type: string;
+  subject: string;
+  query: string;
 };
 
 export default function AIAssistantScreen() {
   const theme = useTheme();
+  const router = useRouter();
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Bonjour! Je suis votre assistant IA UneBox. Comment puis-je vous aider aujourd\'hui?',
+      text: 'Bonjour! Je suis votre assistant IA UneBox amélioré. Je peux maintenant traiter plusieurs demandes en une seule phrase! Par exemple, essayez: "Montre-moi ma facture EDF et mon contrat d\'assurance auto". Comment puis-je vous aider?',
       sender: 'ai',
       timestamp: new Date(),
     },
   ]);
   const [inputText, setInputText] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const quickActions = [
-    { id: '1', text: 'Montre mes factures EDF', icon: 'bolt.fill' },
-    { id: '2', text: 'Résume mes contrats', icon: 'doc.text.fill' },
-    { id: '3', text: 'Rappels à venir', icon: 'bell.fill' },
-    { id: '4', text: 'Espace de stockage', icon: 'chart.pie.fill' },
+    { id: '1', text: 'Factures EDF et téléphone', icon: 'bolt.fill', query: 'mes factures EDF et téléphone' },
+    { id: '2', text: 'Tous mes contrats', icon: 'doc.text.fill', query: 'tous mes contrats' },
+    { id: '3', text: 'Documents récents', icon: 'clock.fill', query: 'documents récents' },
+    { id: '4', text: 'Montants à payer', icon: 'eurosign.circle.fill', query: 'montants à payer' },
   ];
 
+  // Calculate the bottom offset for the tab bar
+  const tabBarHeight = 60 + (Platform.OS === 'ios' ? 10 : 20) + insets.bottom;
+
+  // Scroll to bottom when messages change
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    const timer = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+    return () => clearTimeout(timer);
   }, [messages]);
 
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
+  // Handle keyboard show/hide events
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        console.log('Keyboard showing, height:', e.endCoordinates.height);
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        console.log('Keyboard hiding');
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, []);
+
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+  };
+
+  // New: Call the multi-document AI assistant Edge Function
+  const processMultiDocumentQuery = async (query: string): Promise<{ text: string; documents?: Tables<'documents'>[]; entities?: SearchEntity[] }> => {
+    try {
+      console.log('[AI Assistant] Processing multi-document query:', query);
+
+      const { data, error } = await supabase.functions.invoke('ai-assistant-query', {
+        body: { query }
+      });
+
+      if (error) {
+        console.error('[AI Assistant] Edge Function error:', error);
+        throw error;
+      }
+
+      console.log('[AI Assistant] Response received:', data);
+
+      return {
+        text: data.response,
+        documents: data.documents || [],
+        entities: data.entities || []
+      };
+    } catch (error) {
+      console.error('[AI Assistant] Error processing query:', error);
+      throw error;
+    }
+  };
+
+  // Fallback: Simple local search for backward compatibility
+  const searchDocumentsLocal = async (query: string): Promise<Tables<'documents'>[]> => {
+    try {
+      const lowerQuery = query.toLowerCase();
+      
+      let queryBuilder = supabase
+        .from('documents')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('processing_status', 'completed');
+
+      // Search in multiple fields
+      if (lowerQuery.includes('edf')) {
+        queryBuilder = queryBuilder.or(`sender.ilike.%EDF%,title.ilike.%EDF%,ai_summary.ilike.%EDF%`);
+      } else if (lowerQuery.includes('facture')) {
+        queryBuilder = queryBuilder.eq('document_type', 'Facture');
+      } else if (lowerQuery.includes('contrat')) {
+        queryBuilder = queryBuilder.eq('document_type', 'Contrat');
+      } else if (lowerQuery.includes('récent')) {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        queryBuilder = queryBuilder.gte('created_at', sevenDaysAgo.toISOString());
+      } else if (lowerQuery.includes('payer') || lowerQuery.includes('montant')) {
+        queryBuilder = queryBuilder.not('amount', 'is', null).not('due_date', 'is', null);
+      } else {
+        queryBuilder = queryBuilder.or(
+          `title.ilike.%${query}%,sender.ilike.%${query}%,ai_summary.ilike.%${query}%,category.ilike.%${query}%`
+        );
+      }
+
+      const { data, error } = await queryBuilder.order('created_at', { ascending: false }).limit(10);
+
+      if (error) {
+        console.error('Error searching documents:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Exception searching documents:', error);
+      return [];
+    }
+  };
+
+  const generateAIResponse = async (userText: string): Promise<{ text: string; documents?: Tables<'documents'>[]; entities?: SearchEntity[] }> => {
+    const lowerText = userText.toLowerCase();
+
+    // Try the new multi-document AI assistant first
+    try {
+      const result = await processMultiDocumentQuery(userText);
+      if (result.documents && result.documents.length > 0) {
+        return result;
+      }
+    } catch (error) {
+      console.log('[AI Assistant] Falling back to local search');
+    }
+
+    // Fallback to local search for backward compatibility
+    const documents = await searchDocumentsLocal(userText);
+
+    if (lowerText.includes('facture') || lowerText.includes('edf')) {
+      if (documents.length === 0) {
+        return {
+          text: 'Je n\'ai trouvé aucune facture correspondante dans vos documents. Avez-vous téléversé des factures récemment?',
+        };
+      }
+
+      const totalAmount = documents.reduce((sum, doc) => sum + (doc.amount || 0), 0);
+      let response = `J'ai trouvé ${documents.length} facture(s):\n\n`;
+      
+      documents.slice(0, 5).forEach((doc, i) => {
+        response += `${i + 1}. ${doc.title}\n`;
+        if (doc.sender) response += `   Émetteur: ${doc.sender}\n`;
+        if (doc.amount) response += `   Montant: ${doc.amount.toFixed(2)} ${doc.currency || 'EUR'}\n`;
+        if (doc.due_date) response += `   Échéance: ${new Date(doc.due_date).toLocaleDateString('fr-FR')}\n`;
+        response += '\n';
+      });
+
+      if (totalAmount > 0) {
+        response += `\nMontant total: ${totalAmount.toFixed(2)} EUR`;
+      }
+
+      return { text: response, documents };
+    }
+
+    if (lowerText.includes('contrat')) {
+      if (documents.length === 0) {
+        return {
+          text: 'Je n\'ai trouvé aucun contrat dans vos documents.',
+        };
+      }
+
+      let response = `Vous avez ${documents.length} contrat(s):\n\n`;
+      
+      documents.slice(0, 5).forEach((doc, i) => {
+        response += `${i + 1}. ${doc.title}\n`;
+        if (doc.sender) response += `   Émetteur: ${doc.sender}\n`;
+        if (doc.document_date) response += `   Date: ${new Date(doc.document_date).toLocaleDateString('fr-FR')}\n`;
+        if (doc.ai_summary) response += `   ${doc.ai_summary.substring(0, 100)}...\n`;
+        response += '\n';
+      });
+
+      return { text: response, documents };
+    }
+
+    if (lowerText.includes('rappel')) {
+      const { data: reminders } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('completed', false)
+        .order('due_date', { ascending: true })
+        .limit(5);
+
+      if (!reminders || reminders.length === 0) {
+        return {
+          text: 'Vous n\'avez aucun rappel actif pour le moment. Parfait!',
+        };
+      }
+
+      let response = `Vous avez ${reminders.length} rappel(s) actif(s):\n\n`;
+      
+      reminders.forEach((reminder, i) => {
+        const daysUntil = Math.ceil((new Date(reminder.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        const urgency = daysUntil <= 3 ? '🔴' : daysUntil <= 7 ? '🟡' : '🟢';
+        
+        response += `${urgency} ${reminder.title}\n`;
+        response += `   ${reminder.description}\n`;
+        response += `   Échéance: ${new Date(reminder.due_date).toLocaleDateString('fr-FR')} (${daysUntil} jours)\n\n`;
+      });
+
+      return { text: response };
+    }
+
+    if (lowerText.includes('stockage') || lowerText.includes('espace')) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('storage_used, storage_limit')
+        .eq('id', user?.id)
+        .single();
+
+      if (profile) {
+        const usedGB = (profile.storage_used || 0) / (1024 * 1024 * 1024);
+        const limitGB = (profile.storage_limit || 0) / (1024 * 1024 * 1024);
+        const percentage = ((profile.storage_used || 0) / (profile.storage_limit || 1)) * 100;
+
+        return {
+          text: `Votre espace de stockage:\n\n📊 ${usedGB.toFixed(2)} Go utilisés sur ${limitGB.toFixed(0)} Go (${percentage.toFixed(1)}%)\n\n${
+            percentage < 50
+              ? 'Vous avez encore beaucoup d\'espace disponible!'
+              : percentage < 80
+              ? 'Votre espace se remplit progressivement.'
+              : 'Attention, votre espace de stockage est presque plein!'
+          }`,
+        };
+      }
+    }
+
+    if (lowerText.includes('récent') || lowerText.includes('dernier')) {
+      if (documents.length === 0) {
+        return {
+          text: 'Vous n\'avez pas encore téléversé de documents récents.',
+        };
+      }
+
+      let response = `Vos ${documents.length} documents les plus récents:\n\n`;
+      
+      documents.slice(0, 5).forEach((doc, i) => {
+        response += `${i + 1}. ${doc.title}\n`;
+        if (doc.category) response += `   Catégorie: ${doc.category}\n`;
+        response += `   Ajouté: ${new Date(doc.created_at || '').toLocaleDateString('fr-FR')}\n\n`;
+      });
+
+      return { text: response, documents };
+    }
+
+    if (lowerText.includes('payer') || lowerText.includes('montant')) {
+      const unpaidDocs = documents.filter(doc => doc.amount && doc.due_date);
+      
+      if (unpaidDocs.length === 0) {
+        return {
+          text: 'Aucun document avec montant à payer trouvé. Tout est à jour!',
+        };
+      }
+
+      const totalToPay = unpaidDocs.reduce((sum, doc) => sum + (doc.amount || 0), 0);
+      let response = `Documents avec montants à payer:\n\n`;
+      
+      unpaidDocs.slice(0, 5).forEach((doc, i) => {
+        const daysUntil = Math.ceil((new Date(doc.due_date!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        response += `${i + 1}. ${doc.title}\n`;
+        response += `   Montant: ${doc.amount?.toFixed(2)} ${doc.currency || 'EUR'}\n`;
+        response += `   Échéance: ${new Date(doc.due_date!).toLocaleDateString('fr-FR')} (${daysUntil} jours)\n\n`;
+      });
+
+      response += `\nTotal à payer: ${totalToPay.toFixed(2)} EUR`;
+
+      return { text: response, documents: unpaidDocs };
+    }
+
+    // General search
+    if (documents.length > 0) {
+      let response = `J'ai trouvé ${documents.length} document(s) correspondant à votre recherche:\n\n`;
+      
+      documents.slice(0, 5).forEach((doc, i) => {
+        response += `${i + 1}. ${doc.title}\n`;
+        if (doc.category) response += `   ${doc.category}`;
+        if (doc.sender) response += ` - ${doc.sender}`;
+        response += '\n';
+        if (doc.ai_summary) response += `   ${doc.ai_summary.substring(0, 80)}...\n`;
+        response += '\n';
+      });
+
+      return { text: response, documents };
+    }
+
+    return {
+      text: 'Je peux vous aider à:\n\n- Rechercher plusieurs documents en une seule phrase\n- Analyser vos factures et contrats\n- Gérer vos rappels et échéances\n- Suivre vos montants à payer\n- Analyser votre espace de stockage\n\nEssayez par exemple: "Montre-moi ma facture EDF et mon contrat d\'assurance"',
+    };
+  };
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isProcessing) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -50,44 +355,40 @@ export default function AIAssistantScreen() {
 
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    setIsProcessing(true);
 
-    setTimeout(() => {
-      const aiResponse = generateAIResponse(text);
+    try {
+      const response = await generateAIResponse(text);
+      
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: aiResponse,
+        text: response.text,
+        sender: 'ai',
+        timestamp: new Date(),
+        documents: response.documents,
+        entities: response.entities,
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error generating AI response:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: 'Désolé, une erreur s\'est produite. Veuillez réessayer.',
         sender: 'ai',
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const generateAIResponse = (userText: string): string => {
-    const lowerText = userText.toLowerCase();
-
-    if (lowerText.includes('facture') && lowerText.includes('edf')) {
-      return 'J\'ai trouvé 3 factures EDF dans vos documents:\n\n- Facture EDF - Janvier 2024 (89.50€)\n- Facture EDF - Décembre 2023 (95.20€)\n- Facture EDF - Novembre 2023 (78.90€)\n\nSouhaitez-vous voir plus de détails?';
-    }
-
-    if (lowerText.includes('contrat')) {
-      return 'Vous avez 2 contrats dans vos documents:\n\n- Contrat de travail CDI (signé le 10 Jan 2024)\n- Contrat d\'assurance habitation (valide jusqu\'en 2024)\n\nVoulez-vous que je résume l\'un d\'entre eux?';
-    }
-
-    if (lowerText.includes('rappel')) {
-      return 'Vous avez 5 rappels actifs:\n\n🔴 Urgent: Facture EDF à payer (25 Jan)\n🔴 Urgent: Renouvellement assurance (30 Jan)\n🟡 Moyen: Déclaration fiscale (15 Fév)\n\nVoulez-vous plus de détails?';
-    }
-
-    if (lowerText.includes('stockage') || lowerText.includes('espace')) {
-      return 'Votre espace de stockage:\n\n📊 2.4 Go utilisés sur 15 Go (16%)\n📄 Documents: 1.8 Go\n🖼️ Images: 0.6 Go\n\nVous avez encore beaucoup d\'espace disponible!';
-    }
-
-    return 'Je peux vous aider à:\n\n- Rechercher des documents spécifiques\n- Résumer vos contrats et factures\n- Gérer vos rappels\n- Analyser votre espace de stockage\n\nQue souhaitez-vous faire?';
+  const handleQuickAction = (query: string) => {
+    sendMessage(query);
   };
 
-  const handleQuickAction = (text: string) => {
-    sendMessage(text);
-  };
+  const inputContainerBottom = keyboardHeight > 0 ? keyboardHeight : tabBarHeight;
 
   return (
     <>
@@ -100,58 +401,117 @@ export default function AIAssistantScreen() {
         />
       )}
       <SafeAreaView style={[commonStyles.safeArea]} edges={['top']}>
-        <KeyboardAvoidingView
-          style={styles.container}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
-          {/* Messages */}
+        <View style={styles.container}>
           <ScrollView
             ref={scrollViewRef}
             style={styles.messagesContainer}
-            contentContainerStyle={styles.messagesContent}
+            contentContainerStyle={[
+              styles.messagesContent,
+              { paddingBottom: inputContainerBottom + 80 }
+            ]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
             {messages.map((message) => (
-              <View
-                key={message.id}
-                style={[
-                  styles.messageContainer,
-                  message.sender === 'user' ? styles.userMessageContainer : styles.aiMessageContainer,
-                ]}
-              >
-                {message.sender === 'ai' && (
-                  <View style={styles.aiAvatar}>
-                    <IconSymbol name="sparkles" size={20} color="#FFFFFF" />
-                  </View>
-                )}
+              <View key={message.id}>
                 <View
                   style={[
-                    styles.messageBubble,
-                    message.sender === 'user' ? styles.userMessageBubble : styles.aiMessageBubble,
+                    styles.messageContainer,
+                    message.sender === 'user' ? styles.userMessageContainer : styles.aiMessageContainer,
                   ]}
                 >
-                  <Text
+                  {message.sender === 'ai' && (
+                    <View style={styles.aiAvatar}>
+                      <IconSymbol name="sparkles" size={20} color="#FFFFFF" />
+                    </View>
+                  )}
+                  <View
                     style={[
-                      styles.messageText,
-                      message.sender === 'user' ? styles.userMessageText : styles.aiMessageText,
+                      styles.messageBubble,
+                      message.sender === 'user' ? styles.userMessageBubble : styles.aiMessageBubble,
                     ]}
                   >
-                    {message.text}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.messageTime,
-                      message.sender === 'user' ? styles.userMessageTime : styles.aiMessageTime,
-                    ]}
-                  >
-                    {message.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.messageText,
+                        message.sender === 'user' ? styles.userMessageText : styles.aiMessageText,
+                      ]}
+                    >
+                      {message.text}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.messageTime,
+                        message.sender === 'user' ? styles.userMessageTime : styles.aiMessageTime,
+                      ]}
+                    >
+                      {message.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
                 </View>
+
+                {/* Show entities if available (multi-document query) */}
+                {message.entities && message.entities.length > 0 && (
+                  <View style={styles.entitiesContainer}>
+                    <Text style={styles.entitiesTitle}>Recherches effectuées:</Text>
+                    {message.entities.map((entity, idx) => (
+                      <View key={idx} style={styles.entityBadge}>
+                        <IconSymbol name="magnifyingglass" size={12} color={colors.primary} />
+                        <Text style={styles.entityText}>
+                          {entity.type}: {entity.subject}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Show document cards if available */}
+                {message.documents && message.documents.length > 0 && (
+                  <View style={styles.documentsContainer}>
+                    {message.documents.slice(0, 5).map((doc) => (
+                      <Pressable
+                        key={doc.id}
+                        style={styles.documentCard}
+                        onPress={() => router.push('/(tabs)/documents')}
+                      >
+                        <IconSymbol name="doc.fill" size={20} color={colors.primary} />
+                        <View style={styles.documentCardInfo}>
+                          <Text style={styles.documentCardTitle} numberOfLines={1}>
+                            {doc.title}
+                          </Text>
+                          {doc.sender && (
+                            <Text style={styles.documentCardSubtitle} numberOfLines={1}>
+                              {doc.sender}
+                            </Text>
+                          )}
+                          {doc.amount && (
+                            <Text style={styles.documentCardAmount}>
+                              {doc.amount.toFixed(2)} {doc.currency || 'EUR'}
+                            </Text>
+                          )}
+                        </View>
+                        <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </View>
             ))}
 
-            {/* Quick Actions */}
+            {isProcessing && (
+              <View style={styles.processingContainer}>
+                <View style={styles.aiAvatar}>
+                  <IconSymbol name="sparkles" size={20} color="#FFFFFF" />
+                </View>
+                <View style={[styles.messageBubble, styles.aiMessageBubble]}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.messageText, styles.aiMessageText, { marginTop: 8 }]}>
+                    Analyse de votre requête...
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {messages.length === 1 && (
               <View style={styles.quickActionsContainer}>
                 <Text style={styles.quickActionsTitle}>Actions rapides</Text>
@@ -160,7 +520,7 @@ export default function AIAssistantScreen() {
                     <Pressable
                       key={action.id}
                       style={styles.quickActionButton}
-                      onPress={() => handleQuickAction(action.text)}
+                      onPress={() => handleQuickAction(action.query)}
                     >
                       <IconSymbol name={action.icon} size={24} color={colors.primary} />
                       <Text style={styles.quickActionText}>{action.text}</Text>
@@ -171,31 +531,36 @@ export default function AIAssistantScreen() {
             )}
           </ScrollView>
 
-          {/* Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, { bottom: inputContainerBottom }]}>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
-                placeholder="Posez une question..."
+                placeholder="Posez une question ou demandez plusieurs documents..."
                 placeholderTextColor={colors.textSecondary}
                 value={inputText}
-                onChangeText={setInputText}
+                onChangeText={handleInputChange}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
                 multiline
                 maxLength={500}
+                editable={!isProcessing}
               />
               <Pressable
                 style={[
                   styles.sendButton,
-                  { backgroundColor: inputText.trim() ? colors.primary : colors.border }
+                  { backgroundColor: inputText.trim() && !isProcessing ? colors.primary : colors.border }
                 ]}
                 onPress={() => sendMessage(inputText)}
-                disabled={!inputText.trim()}
+                disabled={!inputText.trim() || isProcessing}
               >
                 <IconSymbol name="arrow.up" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
     </>
   );
@@ -211,7 +576,6 @@ const styles = StyleSheet.create({
   messagesContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 16,
   },
   messageContainer: {
     marginBottom: 16,
@@ -268,6 +632,73 @@ const styles = StyleSheet.create({
   aiMessageTime: {
     color: colors.textSecondary,
   },
+  processingContainer: {
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  entitiesContainer: {
+    marginLeft: 44,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  entitiesTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  entityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 4,
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  entityText: {
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  documentsContainer: {
+    marginLeft: 44,
+    marginTop: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  documentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.06)',
+    elevation: 1,
+  },
+  documentCardInfo: {
+    flex: 1,
+  },
+  documentCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  documentCardSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  documentCardAmount: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
   quickActionsContainer: {
     marginTop: 24,
   },
@@ -299,9 +730,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   inputContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 12 : 90,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,

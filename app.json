@@ -15,8 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.charlesbaptista.uneboxappleappdev",
-      "buildNumber": "5",
+      "bundleIdentifier": "com.unebox.app",
+      "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "UneBox a besoin d'accéder à votre appareil photo pour scanner vos documents.",
@@ -60,10 +60,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "d41cdb69-ffc0-4c64-98ea-fc923d2264fe"
-      }
+      "router": {}
     }
   }
 }

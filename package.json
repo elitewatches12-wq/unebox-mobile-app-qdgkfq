@@ -10,8 +10,6 @@
     "web": "EXPO_NO_TELEMETRY=1 expo start --web",
     "build:web": "expo export -p web && npx workbox generateSW workbox-config.js",
     "build:android": "expo prebuild -p android",
-    "build:ios": "eas build --platform ios --profile production-dev",
-    "build:ios-prod": "eas build --platform ios --profile production",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -56,6 +54,7 @@
     "react-native-css-interop": "^0.1.22",
     "react-native-edge-to-edge": "^1.7.0",
     "react-native-gesture-handler": "^2.24.0",
+    "react-native-maps": "^1.20.1",
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "~4.16.0",

@@ -1,71 +1,85 @@
 
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { IconSymbol } from "@/components/IconSymbol";
+import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@react-navigation/native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, RefreshControl } from "react-native";
 import { colors, commonStyles } from "@/styles/commonStyles";
+import { IconSymbol } from "@/components/IconSymbol";
 import { Stack } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/app/integrations/supabase/client";
+import { Tables } from "@/app/integrations/supabase/types";
+
+type Reminder = Tables<'reminders'>;
 
 export default function RemindersScreen() {
   const theme = useTheme();
-  const [completedReminders, setCompletedReminders] = useState<string[]>([]);
+  const { user } = useAuth();
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const reminders = [
-    {
-      id: '1',
-      title: 'Facture EDF à payer',
-      document: 'Facture EDF - Janvier 2024',
-      dueDate: '25 Janvier 2024',
-      priority: 'high',
-      amount: '89.50€',
-    },
-    {
-      id: '2',
-      title: 'Renouvellement assurance',
-      document: 'Attestation d\'assurance',
-      dueDate: '30 Janvier 2024',
-      priority: 'high',
-      amount: null,
-    },
-    {
-      id: '3',
-      title: 'Déclaration fiscale',
-      document: 'Documents fiscaux 2023',
-      dueDate: '15 Février 2024',
-      priority: 'medium',
-      amount: null,
-    },
-    {
-      id: '4',
-      title: 'Renouvellement carte vitale',
-      document: 'Carte vitale',
-      dueDate: '28 Février 2024',
-      priority: 'low',
-      amount: null,
-    },
-    {
-      id: '5',
-      title: 'Facture Internet Orange',
-      document: 'Facture Internet Orange',
-      dueDate: '20 Février 2024',
-      priority: 'medium',
-      amount: '45.99€',
-    },
-  ];
+  const loadReminders = useCallback(async () => {
+    if (!user) {
+      console.log('[RemindersScreen] No user, skipping load');
+      return;
+    }
 
-  const toggleReminder = (id: string) => {
-    if (completedReminders.includes(id)) {
-      setCompletedReminders(completedReminders.filter(rid => rid !== id));
+    try {
+      console.log('[RemindersScreen] Loading reminders for user:', user.id);
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('due_date', { ascending: true });
+
+      if (error) {
+        console.error('[RemindersScreen] Error loading reminders:', error);
+      } else {
+        console.log('[RemindersScreen] Loaded reminders:', data?.length || 0);
+        setReminders(data || []);
+      }
+    } catch (error) {
+      console.error('[RemindersScreen] Exception loading reminders:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadReminders();
+  }, [user, loadReminders]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadReminders();
+  };
+
+  const toggleReminder = async (id: string) => {
+    const reminder = reminders.find(r => r.id === id);
+    if (!reminder) return;
+
+    const newCompleted = !reminder.completed;
+    
+    const { error } = await supabase
+      .from('reminders')
+      .update({ completed: newCompleted })
+      .eq('id', id);
+
+    if (error) {
+      console.error('[RemindersScreen] Error toggling reminder:', error);
     } else {
-      setCompletedReminders([...completedReminders, id]);
+      setReminders(reminders.map(r => 
+        r.id === id ? { ...r, completed: newCompleted } : r
+      ));
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high': return colors.error;
-      case 'medium': return colors.warning;
+      case 'medium': return colors.accent;
       case 'low': return colors.secondary;
       default: return colors.textSecondary;
     }
@@ -73,27 +87,36 @@ export default function RemindersScreen() {
 
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
-      case 'high': return 'Urgent';
-      case 'medium': return 'Moyen';
-      case 'low': return 'Faible';
-      default: return '';
+      case 'high': return 'Haute';
+      case 'medium': return 'Moyenne';
+      case 'low': return 'Basse';
+      default: return 'Normale';
     }
   };
 
   const getDaysUntil = (dateString: string) => {
-    const today = new Date();
+    const now = new Date();
     const dueDate = new Date(dateString);
-    const diffTime = dueDate.getTime() - today.getTime();
+    const diffTime = dueDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (diffDays < 0) return 'En retard';
-    if (diffDays === 0) return 'Aujourd\'hui';
-    if (diffDays === 1) return 'Demain';
+    if (diffDays < 0) return `En retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''}`;
+    if (diffDays === 0) return "Aujourd'hui";
+    if (diffDays === 1) return "Demain";
     return `Dans ${diffDays} jours`;
   };
 
-  const activeReminders = reminders.filter(r => !completedReminders.includes(r.id));
-  const completedRemindersList = reminders.filter(r => completedReminders.includes(r.id));
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      day: 'numeric', 
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  const activeReminders = reminders.filter(r => !r.completed);
+  const completedReminders = reminders.filter(r => r.completed);
 
   return (
     <>
@@ -106,128 +129,163 @@ export default function RemindersScreen() {
         />
       )}
       <SafeAreaView style={[commonStyles.safeArea]} edges={['top']}>
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header Stats */}
-          <View style={styles.statsContainer}>
-            <View style={[styles.statCard, { backgroundColor: colors.error + '20' }]}>
-              <Text style={[styles.statNumber, { color: colors.error }]}>
-                {activeReminders.filter(r => r.priority === 'high').length}
-              </Text>
-              <Text style={styles.statLabel}>Urgents</Text>
-            </View>
-            <View style={[styles.statCard, { backgroundColor: colors.warning + '20' }]}>
-              <Text style={[styles.statNumber, { color: colors.warning }]}>
-                {activeReminders.filter(r => r.priority === 'medium').length}
-              </Text>
-              <Text style={styles.statLabel}>Moyens</Text>
-            </View>
-            <View style={[styles.statCard, { backgroundColor: colors.secondary + '20' }]}>
-              <Text style={[styles.statNumber, { color: colors.secondary }]}>
-                {completedReminders.length}
-              </Text>
-              <Text style={styles.statLabel}>Terminés</Text>
-            </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Chargement des rappels...</Text>
           </View>
-
-          {/* Active Reminders */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              À faire ({activeReminders.length})
+        ) : reminders.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol name="bell.fill" size={64} color={colors.textSecondary} />
+            <Text style={styles.emptyTitle}>Aucun rappel</Text>
+            <Text style={styles.emptySubtitle}>
+              Créez des rappels pour ne jamais oublier vos échéances importantes
             </Text>
-
-            {activeReminders.length === 0 ? (
-              <View style={[commonStyles.card, styles.emptyState]}>
-                <IconSymbol name="checkmark.circle.fill" size={64} color={colors.secondary} />
-                <Text style={styles.emptyStateTitle}>Tout est à jour!</Text>
-                <Text style={styles.emptyStateText}>
-                  Vous n&apos;avez aucun rappel en attente
-                </Text>
-              </View>
-            ) : (
-              activeReminders.map((reminder) => (
-                <Pressable
-                  key={reminder.id}
-                  style={[commonStyles.card, styles.reminderCard]}
-                  onPress={() => toggleReminder(reminder.id)}
-                >
-                  <View style={styles.reminderHeader}>
-                    <Pressable
-                      style={styles.checkbox}
-                      onPress={() => toggleReminder(reminder.id)}
-                    >
-                      <View style={[styles.checkboxInner, { borderColor: getPriorityColor(reminder.priority) }]} />
-                    </Pressable>
-                    <View style={styles.reminderInfo}>
-                      <Text style={styles.reminderTitle}>{reminder.title}</Text>
-                      <Text style={styles.reminderDocument}>{reminder.document}</Text>
-                    </View>
-                    <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(reminder.priority) }]}>
-                      <Text style={styles.priorityText}>{getPriorityLabel(reminder.priority)}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.reminderDetails}>
-                    <View style={styles.detailItem}>
-                      <IconSymbol name="calendar" size={16} color={colors.textSecondary} />
-                      <Text style={styles.detailText}>{reminder.dueDate}</Text>
-                    </View>
-                    <View style={styles.detailItem}>
-                      <IconSymbol name="clock.fill" size={16} color={colors.textSecondary} />
-                      <Text style={styles.detailText}>{getDaysUntil(reminder.dueDate)}</Text>
-                    </View>
-                    {reminder.amount && (
-                      <View style={styles.detailItem}>
-                        <IconSymbol name="eurosign.circle.fill" size={16} color={colors.textSecondary} />
-                        <Text style={styles.detailText}>{reminder.amount}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <Pressable style={styles.viewDocumentButton}>
-                    <IconSymbol name="doc.text.fill" size={16} color={colors.primary} />
-                    <Text style={styles.viewDocumentText}>Voir le document</Text>
-                  </Pressable>
-                </Pressable>
-              ))
-            )}
           </View>
-
-          {/* Completed Reminders */}
-          {completedRemindersList.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Terminés ({completedRemindersList.length})
-              </Text>
-
-              {completedRemindersList.map((reminder) => (
-                <Pressable
-                  key={reminder.id}
-                  style={[commonStyles.card, styles.reminderCard, styles.completedCard]}
-                  onPress={() => toggleReminder(reminder.id)}
-                >
-                  <View style={styles.reminderHeader}>
-                    <Pressable
-                      style={styles.checkbox}
-                      onPress={() => toggleReminder(reminder.id)}
-                    >
-                      <View style={[styles.checkboxInner, styles.checkboxChecked]}>
-                        <IconSymbol name="checkmark" size={16} color="#FFFFFF" />
+        ) : (
+          <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+          >
+            {/* Active Reminders */}
+            {activeReminders.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  À venir ({activeReminders.length})
+                </Text>
+                {activeReminders.map((reminder) => (
+                  <Pressable
+                    key={reminder.id}
+                    style={[commonStyles.card, styles.reminderCard]}
+                    onPress={() => toggleReminder(reminder.id)}
+                  >
+                    <View style={styles.reminderHeader}>
+                      <Pressable
+                        style={[
+                          styles.checkbox,
+                          reminder.completed && styles.checkboxChecked,
+                        ]}
+                        onPress={() => toggleReminder(reminder.id)}
+                      >
+                        {reminder.completed && (
+                          <IconSymbol name="checkmark" size={16} color="#FFFFFF" />
+                        )}
+                      </Pressable>
+                      <View style={styles.reminderContent}>
+                        <Text
+                          style={[
+                            styles.reminderTitle,
+                            reminder.completed && styles.reminderTitleCompleted,
+                          ]}
+                        >
+                          {reminder.title}
+                        </Text>
+                        {reminder.description && (
+                          <Text style={styles.reminderDescription}>
+                            {reminder.description}
+                          </Text>
+                        )}
                       </View>
-                    </Pressable>
-                    <View style={styles.reminderInfo}>
-                      <Text style={[styles.reminderTitle, styles.completedText]}>{reminder.title}</Text>
-                      <Text style={[styles.reminderDocument, styles.completedText]}>{reminder.document}</Text>
                     </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </ScrollView>
+
+                    <View style={styles.reminderFooter}>
+                      <View style={styles.reminderMeta}>
+                        <IconSymbol name="calendar" size={14} color={colors.textSecondary} />
+                        <Text style={styles.reminderMetaText}>
+                          {formatDate(reminder.due_date)}
+                        </Text>
+                      </View>
+                      <View style={styles.reminderMeta}>
+                        <View
+                          style={[
+                            styles.priorityDot,
+                            { backgroundColor: getPriorityColor(reminder.priority || 'medium') },
+                          ]}
+                        />
+                        <Text style={styles.reminderMetaText}>
+                          {getPriorityLabel(reminder.priority || 'medium')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.daysUntilBadge,
+                        {
+                          backgroundColor:
+                            getDaysUntil(reminder.due_date).includes('retard')
+                              ? colors.error + '15'
+                              : colors.primary + '15',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.daysUntilText,
+                          {
+                            color: getDaysUntil(reminder.due_date).includes('retard')
+                              ? colors.error
+                              : colors.primary,
+                          },
+                        ]}
+                      >
+                        {getDaysUntil(reminder.due_date)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Completed Reminders */}
+            {completedReminders.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  Terminés ({completedReminders.length})
+                </Text>
+                {completedReminders.map((reminder) => (
+                  <Pressable
+                    key={reminder.id}
+                    style={[commonStyles.card, styles.reminderCard, styles.reminderCardCompleted]}
+                    onPress={() => toggleReminder(reminder.id)}
+                  >
+                    <View style={styles.reminderHeader}>
+                      <Pressable
+                        style={[styles.checkbox, styles.checkboxChecked]}
+                        onPress={() => toggleReminder(reminder.id)}
+                      >
+                        <IconSymbol name="checkmark" size={16} color="#FFFFFF" />
+                      </Pressable>
+                      <View style={styles.reminderContent}>
+                        <Text style={[styles.reminderTitle, styles.reminderTitleCompleted]}>
+                          {reminder.title}
+                        </Text>
+                        {reminder.description && (
+                          <Text style={styles.reminderDescription}>
+                            {reminder.description}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.reminderFooter}>
+                      <View style={styles.reminderMeta}>
+                        <IconSymbol name="calendar" size={14} color={colors.textSecondary} />
+                        <Text style={styles.reminderMetaText}>
+                          {formatDate(reminder.due_date)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </>
   );
@@ -242,26 +300,33 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 100,
   },
-  statsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
+  loadingContainer: {
     flex: 1,
-    borderRadius: 12,
-    padding: 16,
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 16,
   },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 13,
+  loadingText: {
+    fontSize: 16,
     color: colors.textSecondary,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 20,
     fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   section: {
     marginBottom: 24,
@@ -274,29 +339,31 @@ const styles = StyleSheet.create({
   },
   reminderCard: {
     marginBottom: 12,
+    position: 'relative',
+  },
+  reminderCardCompleted: {
+    opacity: 0.6,
   },
   reminderHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     gap: 12,
     marginBottom: 12,
   },
   checkbox: {
-    padding: 4,
-  },
-  checkboxInner: {
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 2,
   },
   checkboxChecked: {
-    backgroundColor: colors.secondary,
-    borderColor: colors.secondary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  reminderInfo: {
+  reminderContent: {
     flex: 1,
   },
   reminderTitle: {
@@ -305,69 +372,44 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 4,
   },
-  reminderDocument: {
-    fontSize: 14,
+  reminderTitleCompleted: {
+    textDecorationLine: 'line-through',
     color: colors.textSecondary,
   },
-  priorityBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  reminderDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  reminderFooter: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingLeft: 36,
+  },
+  reminderMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reminderMetaText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  daysUntilBadge: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 12,
   },
-  priorityText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  reminderDetails: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 12,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  detailText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  viewDocumentButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.highlight,
-    gap: 6,
-  },
-  viewDocumentText: {
-    fontSize: 14,
+  daysUntilText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: colors.primary,
-  },
-  completedCard: {
-    opacity: 0.6,
-  },
-  completedText: {
-    textDecorationLine: 'line-through',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
   },
 });
