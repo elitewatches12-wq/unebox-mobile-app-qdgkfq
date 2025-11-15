@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] Completing onboarding for user:', user.id);
       const { error } = await supabase
         .from('profiles')
-        .update({ onboarding_completed: true })
+        .update({ onboarding_completed: true } as Partial<Profile>)
         .eq('id', user.id);
 
       if (error) {

@@ -42,6 +42,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "baptistaoyoko90@icloud.com",
+        "ascAppId": "6754610388",
+        "appleTeamId": "V5CXDUF2GA"
+      }
+    }
   }
 }

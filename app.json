@@ -15,8 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unebox.app",
-      "buildNumber": "3",
+      "bundleIdentifier": "com.charlesbaptista.uneboxappleapp",
+      "buildNumber": "5",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "UneBox a besoin d'accéder à votre appareil photo pour scanner vos documents.",
